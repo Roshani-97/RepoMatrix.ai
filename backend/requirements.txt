@@ -1,0 +1,9 @@
+flask>=3.0.0
+flask-cors>=4.0.0
+PyGithub>=2.1.0
+python-dotenv>=1.0.0
+requests>=2.31.0
+groq>=0.4.0
+tavily-python>=0.3.0
+e2b-code-interpreter>=0.0.1
+gunicorn>=21.0.0

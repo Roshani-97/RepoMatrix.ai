@@ -1,0 +1,1807 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+  <title>RepoMatrix.ai — Understand Any Codebase</title>
+  <meta name="description"
+    content="Paste any GitHub or GitLab commit. AI explains the intent, searches the web for evidence, and shows execution proof." />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap"
+    rel="stylesheet">
+  <style>
+    :root {
+      --bg: #020c18;
+      --s1: #071320;
+      --s2: #0e1e30;
+      --s3: #162840;
+      --acc: #7c6af7;
+      --acc2: #4de8b0;
+      --acc3: #f7a26a;
+      --acc4: #f08080;
+      --acc-glow: rgba(124, 106, 247, 0.35);
+      --acc2-glow: rgba(77, 232, 176, 0.3);
+      --border: rgba(255, 255, 255, 0.06);
+      --border2: rgba(255, 255, 255, 0.12);
+      --text: #eeeaf8;
+      --text2: #8885a0;
+      --text3: #50506a;
+      --mono: 'JetBrains Mono', monospace;
+      --sans: 'Space Grotesk', sans-serif;
+      --r: 14px;
+      --r2: 10px;
+      --r3: 8px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0
+    }
+
+    ::selection {
+      background: rgba(124, 106, 247, 0.3);
+      color: #fff
+    }
+
+    ::-webkit-scrollbar {
+      width: 5px
+    }
+
+    ::-webkit-scrollbar-track {
+      background: var(--s1)
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--s3);
+      border-radius: 999px
+    }
+
+    body {
+      background: var(--bg);
+      background-image:
+        radial-gradient(ellipse 120% 60% at 50% 0%, #0a1f3a 0%, transparent 65%),
+        linear-gradient(180deg, #071829 0%, #020c18 35%, #010508 100%);
+      font-family: var(--sans);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden
+    }
+
+    /* ── Canvas Bg (git graph) ── */
+    #bgCanvas {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none
+    }
+
+    /* ── Git branch root line pattern ── */
+    .git-branch-bg {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      opacity: 1;
+      overflow: hidden;
+    }
+
+    .git-branch-bg svg {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* ── Grid lines (kept, very subtle) ── */
+    .grid-bg {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      background-image: linear-gradient(rgba(124, 106, 247, 0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(124, 106, 247, 0.025) 1px, transparent 1px);
+      background-size: 50px 50px
+    }
+
+    /* ── Nav ── */
+    nav {
+      position: relative;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px 36px;
+      border-bottom: 1px solid var(--border);
+      backdrop-filter: blur(20px);
+      background: rgba(4, 4, 13, 0.7);
+      position: sticky;
+      top: 0
+    }
+
+    .logo {
+      font-family: var(--mono);
+      font-size: 15px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+      color: var(--text)
+    }
+
+    .logo-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 9px;
+      background: linear-gradient(135deg, var(--acc), var(--acc2));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden
+    }
+
+    .logo-icon::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, transparent 40%, rgba(255, 255, 255, 0.15));
+      border-radius: inherit
+    }
+
+    .logo-accent {
+      color: var(--acc2)
+    }
+
+    .nav-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--acc2)
+    }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--acc2);
+      animation: pulse 2s ease-in-out infinite
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        opacity: 1;
+        box-shadow: 0 0 0 0 var(--acc2-glow)
+      }
+
+      50% {
+        opacity: 0.7;
+        box-shadow: 0 0 0 6px transparent
+      }
+    }
+
+    .modes {
+      display: flex;
+      gap: 4px;
+      background: var(--s2);
+      border: 1px solid var(--border);
+      padding: 4px;
+      border-radius: 999px
+    }
+
+    .mode-btn {
+      font-family: var(--mono);
+      font-size: 10px;
+      padding: 6px 16px;
+      border-radius: 999px;
+      border: none;
+      background: transparent;
+      color: var(--text2);
+      cursor: pointer;
+      transition: all 0.25s;
+      letter-spacing: 0.05em
+    }
+
+    .mode-btn:hover {
+      color: var(--text)
+    }
+
+    .mode-btn.active {
+      background: linear-gradient(135deg, var(--acc), #5b4dd4);
+      color: #fff;
+      box-shadow: 0 0 16px var(--acc-glow)
+    }
+
+    /* ── Hero ── */
+    .hero {
+      position: relative;
+      z-index: 10;
+      text-align: center;
+      padding: 64px 32px 40px;
+      max-width: 800px;
+      margin: 0 auto
+    }
+
+    .eyebrow {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--acc2);
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      opacity: 0;
+      animation: fadeInUp 0.6s 0.1s ease both
+    }
+
+    .eyebrow::before,
+    .eyebrow::after {
+      content: '';
+      width: 48px;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--acc2))
+    }
+
+    .eyebrow::after {
+      background: linear-gradient(90deg, var(--acc2), transparent)
+    }
+
+    h1 {
+      font-family: var(--mono);
+      font-size: clamp(28px, 5vw, 52px);
+      font-weight: 700;
+      line-height: 1.1;
+      letter-spacing: -0.03em;
+      margin-bottom: 16px;
+      opacity: 0;
+      animation: fadeInUp 0.6s 0.2s ease both
+    }
+
+    .hl {
+      background: linear-gradient(135deg, var(--acc), #a78af7);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text
+    }
+
+    .hl2 {
+      background: linear-gradient(135deg, var(--acc2), #7ff5c8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text
+    }
+
+    .subtitle {
+      font-size: 15px;
+      color: var(--text2);
+      font-weight: 400;
+      max-width: 500px;
+      margin: 0 auto 40px;
+      line-height: 1.7;
+      opacity: 0;
+      animation: fadeInUp 0.6s 0.3s ease both
+    }
+
+    .stat-bar {
+      display: flex;
+      justify-content: center;
+      gap: 32px;
+      margin-bottom: 40px;
+      opacity: 0;
+      animation: fadeInUp 0.6s 0.4s ease both
+    }
+
+    .stat {
+      text-align: center
+    }
+
+    .stat-num {
+      font-family: var(--mono);
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--acc);
+      display: block
+    }
+
+    .stat-label {
+      font-size: 11px;
+      color: var(--text3);
+      margin-top: 2px;
+      font-family: var(--mono)
+    }
+
+    @keyframes fadeInUp {
+      from {
+        opacity: 0;
+        transform: translateY(20px)
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0)
+      }
+    }
+
+    /* ── Input ── */
+    .input-section {
+      position: relative;
+      z-index: 10;
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 0 24px;
+      opacity: 0;
+      animation: fadeInUp 0.6s 0.5s ease both
+    }
+
+    .input-wrap {
+      position: relative
+    }
+
+    .input-box {
+      background: rgba(11, 11, 26, 0.8);
+      border: 1px solid var(--border2);
+      border-radius: var(--r);
+      padding: 6px 6px 6px 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      transition: all 0.3s;
+      backdrop-filter: blur(20px)
+    }
+
+    .input-box:focus-within {
+      border-color: var(--acc);
+      box-shadow: 0 0 0 3px rgba(124, 106, 247, 0.15), 0 0 30px rgba(124, 106, 247, 0.1)
+    }
+
+    .input-glow {
+      position: absolute;
+      inset: -1px;
+      border-radius: var(--r);
+      background: linear-gradient(135deg, var(--acc), var(--acc2));
+      opacity: 0;
+      filter: blur(8px);
+      z-index: -1;
+      transition: opacity 0.3s;
+      pointer-events: none
+    }
+
+    .input-box:focus-within~.input-glow {
+      opacity: 0.3
+    }
+
+    .input-prefix {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--acc);
+      opacity: 0.8;
+      white-space: nowrap;
+      flex-shrink: 0
+    }
+
+    input[type="text"] {
+      flex: 1;
+      background: none;
+      border: none;
+      outline: none;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--text);
+      padding: 14px 0
+    }
+
+    input::placeholder {
+      color: var(--text3)
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 6px;
+      flex-shrink: 0
+    }
+
+    .btn {
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 700;
+      padding: 12px 18px;
+      border-radius: var(--r2);
+      border: none;
+      cursor: pointer;
+      letter-spacing: 0.06em;
+      transition: all 0.2s;
+      position: relative;
+      overflow: hidden;
+      white-space: nowrap
+    }
+
+    .btn::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.15), transparent);
+      opacity: 0;
+      transition: opacity 0.2s
+    }
+
+    .btn:hover::after {
+      opacity: 1
+    }
+
+    .btn:active {
+      transform: scale(0.97)
+    }
+
+    .btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      transform: none
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--acc), #5b4dd4);
+      color: #fff;
+      box-shadow: 0 4px 15px rgba(124, 106, 247, 0.3)
+    }
+
+    .btn-primary:hover {
+      box-shadow: 0 6px 25px rgba(124, 106, 247, 0.5);
+      transform: translateY(-1px)
+    }
+
+    .btn-secondary {
+      background: linear-gradient(135deg, var(--acc2), #2db88a);
+      color: #04040d;
+      box-shadow: 0 4px 15px rgba(77, 232, 176, 0.25)
+    }
+
+    .btn-secondary:hover {
+      box-shadow: 0 6px 25px rgba(77, 232, 176, 0.4);
+      transform: translateY(-1px)
+    }
+
+    .hint {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--text3);
+      text-align: center;
+      margin-top: 12px
+    }
+
+    .hint a {
+      color: var(--acc);
+      text-decoration: none;
+      transition: color 0.2s
+    }
+
+    .hint a:hover {
+      color: var(--acc2)
+    }
+
+    /* ── Concept grid ── */
+    .concept-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 8px;
+      margin: 12px 0
+    }
+
+    .concept-btn {
+      padding: 10px 14px;
+      background: var(--s2);
+      border: 1px solid var(--border);
+      border-radius: var(--r3);
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--text2);
+      cursor: pointer;
+      transition: all 0.2s;
+      text-align: center;
+      letter-spacing: 0.04em
+    }
+
+    .concept-btn:hover {
+      border-color: var(--acc);
+      color: var(--acc);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(124, 106, 247, 0.15)
+    }
+
+    .concept-btn.selected {
+      background: rgba(124, 106, 247, 0.15);
+      border-color: var(--acc);
+      color: var(--acc);
+      box-shadow: 0 0 12px rgba(124, 106, 247, 0.2)
+    }
+
+    .lang-select {
+      background: var(--s2);
+      border: 1px solid var(--border);
+      border-radius: var(--r3);
+      padding: 8px 12px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.2s;
+      cursor: pointer
+    }
+
+    .lang-select:focus {
+      border-color: var(--acc)
+    }
+
+    .issue-search-row {
+      display: flex;
+      gap: 8px;
+      width: 100%
+    }
+
+    .issue-search-row input {
+      flex: 1
+    }
+
+    /* ── Results ── */
+    .results {
+      position: relative;
+      z-index: 10;
+      max-width: 720px;
+      margin: 28px auto 80px;
+      padding: 0 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px
+    }
+
+    /* ── Cards ── */
+    .card {
+      background: rgba(11, 11, 26, 0.75);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      overflow: hidden;
+      backdrop-filter: blur(16px);
+      animation: cardEnter 0.4s ease both;
+      transition: border-color 0.3s, box-shadow 0.3s;
+      position: relative
+    }
+
+    .card:hover {
+      border-color: rgba(124, 106, 247, 0.25);
+      box-shadow: 0 8px 32px rgba(124, 106, 247, 0.08)
+    }
+
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(124, 106, 247, 0.4), transparent);
+      opacity: 0;
+      transition: opacity 0.3s
+    }
+
+    .card:hover::before {
+      opacity: 1
+    }
+
+    @keyframes cardEnter {
+      from {
+        opacity: 0;
+        transform: translateY(16px) scale(0.99)
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1)
+      }
+    }
+
+    .card:nth-child(1) {
+      animation-delay: 0.05s
+    }
+
+    .card:nth-child(2) {
+      animation-delay: 0.12s
+    }
+
+    .card:nth-child(3) {
+      animation-delay: 0.19s
+    }
+
+    .card:nth-child(4) {
+      animation-delay: 0.26s
+    }
+
+    .card:nth-child(5) {
+      animation-delay: 0.33s
+    }
+
+    .card:nth-child(6) {
+      animation-delay: 0.4s
+    }
+
+    .card-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 13px 18px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.015)
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      box-shadow: 0 0 8px currentColor
+    }
+
+    .card-title {
+      font-family: var(--mono);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      flex: 1
+    }
+
+    .card-tag {
+      font-family: var(--mono);
+      font-size: 9px;
+      color: var(--text3);
+      border: 1px solid var(--border);
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: var(--s2)
+    }
+
+    .card-body {
+      padding: 18px
+    }
+
+    /* ── Content pieces ── */
+    .meta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 14px
+    }
+
+    .meta-pill {
+      font-family: var(--mono);
+      font-size: 10px;
+      background: var(--s2);
+      border: 1px solid var(--border);
+      padding: 4px 10px;
+      border-radius: 5px;
+      color: var(--text2)
+    }
+
+    .meta-pill span {
+      color: var(--text)
+    }
+
+    .commit-message {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text);
+      margin-bottom: 14px;
+      line-height: 1.6;
+      padding: 12px 15px;
+      background: rgba(124, 106, 247, 0.06);
+      border-radius: var(--r3);
+      border-left: 2px solid var(--acc)
+    }
+
+    .file-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px
+    }
+
+    .file-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      background: var(--s2);
+      border-radius: var(--r3);
+      justify-content: space-between;
+      border: 1px solid var(--border)
+    }
+
+    .file-name {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--acc2)
+    }
+
+    .file-stats {
+      display: flex;
+      gap: 8px;
+      font-family: var(--mono);
+      font-size: 10px
+    }
+
+    .additions {
+      color: #4de8b0
+    }
+
+    .deletions {
+      color: #f08080
+    }
+
+    .diff-block {
+      font-family: var(--mono);
+      font-size: 10px;
+      background: #060612;
+      border-top: 1px solid var(--border);
+      max-height: 160px;
+      overflow-y: auto;
+      line-height: 1.8
+    }
+
+    .diff-line {
+      padding: 1px 14px;
+      transition: background 0.1s
+    }
+
+    .diff-added {
+      background: rgba(77, 232, 176, 0.07);
+      color: #4de8b0
+    }
+
+    .diff-removed {
+      background: rgba(240, 128, 128, 0.07);
+      color: #f08080
+    }
+
+    .diff-ctx {
+      color: var(--text3)
+    }
+
+    .why-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 12px
+    }
+
+    .why-item {
+      padding: 14px;
+      background: var(--s2);
+      border-radius: var(--r3);
+      border: 1px solid var(--border);
+      transition: border-color 0.2s
+    }
+
+    .why-item:hover {
+      border-color: var(--border2)
+    }
+
+    .why-label {
+      font-family: var(--mono);
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin-bottom: 8px
+    }
+
+    .why-text {
+      font-size: 13px;
+      color: var(--text2);
+      line-height: 1.7
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-family: var(--mono);
+      font-size: 10px;
+      padding: 3px 10px;
+      border-radius: 999px;
+      margin-bottom: 8px;
+      font-weight: 600
+    }
+
+    .badge-yes {
+      background: rgba(77, 232, 176, 0.12);
+      color: var(--acc2);
+      border: 1px solid rgba(77, 232, 176, 0.25)
+    }
+
+    .badge-no {
+      background: rgba(240, 128, 128, 0.1);
+      color: #f08080;
+      border: 1px solid rgba(240, 128, 128, 0.25)
+    }
+
+    .lesson-box {
+      padding: 16px;
+      background: rgba(124, 106, 247, 0.06);
+      border: 1px solid rgba(124, 106, 247, 0.2);
+      border-radius: var(--r3);
+      font-size: 14px;
+      color: var(--text2);
+      line-height: 1.75;
+      font-style: italic;
+      position: relative
+    }
+
+    .lesson-box::before {
+      content: '\201C';
+      position: absolute;
+      top: 8px;
+      left: 12px;
+      font-size: 40px;
+      color: rgba(124, 106, 247, 0.2);
+      font-family: serif;
+      line-height: 1
+    }
+
+    .evidence-list,
+    .pattern-list,
+    .issue-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px
+    }
+
+    .evidence-item,
+    .pattern-item,
+    .issue-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 12px;
+      background: var(--s2);
+      border-radius: var(--r3);
+      text-decoration: none;
+      border: 1px solid var(--border);
+      transition: all 0.2s
+    }
+
+    .evidence-item:hover,
+    .pattern-item:hover,
+    .issue-item:hover {
+      border-color: var(--border2);
+      background: var(--s3);
+      transform: translateX(2px)
+    }
+
+    .ev-badge,
+    .pattern-badge {
+      font-family: var(--mono);
+      font-size: 9px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      white-space: nowrap;
+      flex-shrink: 0;
+      margin-top: 1px;
+      font-weight: 600
+    }
+
+    .ev-gh,
+    .pattern-gh {
+      background: rgba(124, 106, 247, 0.15);
+      color: var(--acc)
+    }
+
+    .ev-so,
+    .pattern-so {
+      background: rgba(247, 162, 106, 0.15);
+      color: var(--acc3)
+    }
+
+    .ev-docs {
+      background: rgba(77, 232, 176, 0.12);
+      color: var(--acc2)
+    }
+
+    .ev-web,
+    .pattern-web {
+      background: rgba(136, 135, 128, 0.2);
+      color: var(--text2)
+    }
+
+    .ev-content,
+    .pattern-content {
+      flex: 1;
+      min-width: 0
+    }
+
+    .ev-title,
+    .pattern-title,
+    .issue-title {
+      font-size: 12px;
+      color: var(--text);
+      font-weight: 500;
+      margin-bottom: 3px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis
+    }
+
+    .ev-snippet,
+    .pattern-snippet,
+    .issue-body {
+      font-size: 11px;
+      color: var(--text3);
+      line-height: 1.5
+    }
+
+    .pattern-repo {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--acc);
+      margin-top: 4px
+    }
+
+    .no-data {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text3);
+      padding: 16px;
+      text-align: center;
+      border: 1px dashed var(--border);
+      border-radius: var(--r3)
+    }
+
+    .guide-concept {
+      font-family: var(--mono);
+      font-size: 12px;
+      padding: 8px 14px;
+      background: rgba(124, 106, 247, 0.1);
+      border: 1px solid rgba(124, 106, 247, 0.25);
+      border-radius: var(--r3);
+      margin-bottom: 14px;
+      color: var(--acc)
+    }
+
+    .example-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px
+    }
+
+    .example-item {
+      padding: 12px;
+      background: var(--s2);
+      border-radius: var(--r3);
+      border: 1px solid var(--border);
+      transition: border-color 0.2s
+    }
+
+    .example-item:hover {
+      border-color: var(--border2)
+    }
+
+    .example-sha {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--acc);
+      margin-bottom: 4px
+    }
+
+    .example-msg {
+      font-size: 12px;
+      color: var(--text);
+      margin-bottom: 4px
+    }
+
+    .example-meta {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--text3)
+    }
+
+    .issue-labels {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 6px
+    }
+
+    .issue-label {
+      font-family: var(--mono);
+      font-size: 9px;
+      padding: 2px 7px;
+      border-radius: 4px;
+      background: rgba(124, 106, 247, 0.15);
+      color: var(--acc)
+    }
+
+    .exec-unavailable {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text3);
+      padding: 14px;
+      text-align: center;
+      background: var(--s2);
+      border-radius: var(--r3);
+      border: 1px solid var(--border)
+    }
+
+    .execution-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 10px
+    }
+
+    .exec-item {
+      background: var(--s2);
+      border-radius: var(--r3);
+      overflow: hidden;
+      border: 1px solid var(--border)
+    }
+
+    .exec-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border)
+    }
+
+    .exec-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%
+    }
+
+    .exec-success {
+      background: var(--acc2);
+      box-shadow: 0 0 8px var(--acc2)
+    }
+
+    .exec-fail {
+      background: var(--acc4);
+      box-shadow: 0 0 8px var(--acc4)
+    }
+
+    .exec-pending {
+      background: var(--acc3);
+      box-shadow: 0 0 8px var(--acc3)
+    }
+
+    .exec-file {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--acc2);
+      flex: 1
+    }
+
+    .exec-code {
+      font-family: var(--mono);
+      font-size: 11px;
+      padding: 10px 12px;
+      background: #040410;
+      color: var(--text2);
+      white-space: pre-wrap;
+      word-break: break-all;
+      border-bottom: 1px solid var(--border)
+    }
+
+    .exec-output {
+      font-family: var(--mono);
+      font-size: 11px;
+      padding: 10px 12px
+    }
+
+    .exec-output.ok {
+      color: var(--acc2);
+      background: rgba(77, 232, 176, 0.03)
+    }
+
+    .exec-output.error {
+      color: var(--acc4);
+      background: rgba(240, 128, 128, 0.03)
+    }
+
+    .exec-output.pending {
+      color: var(--acc3);
+      background: rgba(247, 162, 106, 0.03);
+      font-style: italic
+    }
+
+    /* ── Loading ── */
+    .loading {
+      text-align: center;
+      padding: 56px 24px;
+      font-family: var(--mono);
+      color: var(--text3);
+      font-size: 12px
+    }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 2px solid var(--s3);
+      border-top-color: var(--acc);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 20px
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg)
+      }
+    }
+
+    .loading-step {
+      font-size: 11px;
+      color: var(--text3);
+      margin-top: 8px;
+      animation: blink 1.5s ease-in-out infinite
+    }
+
+    @keyframes blink {
+
+      0%,
+      100% {
+        opacity: 1
+      }
+
+      50% {
+        opacity: 0.5
+      }
+    }
+
+    .error-box {
+      background: rgba(240, 128, 128, 0.07);
+      border: 1px solid rgba(240, 128, 128, 0.25);
+      border-radius: var(--r3);
+      padding: 16px 18px;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: #f08080;
+      line-height: 1.6
+    }
+
+    .error-box code {
+      background: rgba(240, 128, 128, 0.1);
+      padding: 2px 6px;
+      border-radius: 4px
+    }
+
+    /* ── Mode sections ── */
+    .mode-section {
+      display: none
+    }
+
+    .mode-section.active {
+      display: block
+    }
+
+    .box-inner {
+      background: rgba(11, 11, 26, 0.8);
+      border: 1px solid var(--border2);
+      border-radius: var(--r);
+      padding: 20px;
+      backdrop-filter: blur(20px)
+    }
+
+    .box-inner input {
+      width: 100%;
+      background: none;
+      border: none;
+      border-bottom: 1px solid var(--border);
+      outline: none;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--text);
+      padding: 10px 0;
+      margin-bottom: 16px;
+      transition: border-color 0.2s
+    }
+
+    .box-inner input:focus {
+      border-bottom-color: var(--acc)
+    }
+
+    .box-inner input::placeholder {
+      color: var(--text3)
+    }
+
+    .hidden {
+      display: none !important
+    }
+
+    /* ── Footer ── */
+    .footer {
+      position: relative;
+      z-index: 10;
+      text-align: center;
+      padding: 24px;
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--text3);
+      border-top: 1px solid var(--border)
+    }
+
+    /* ── Tooltip ── */
+    [data-tip] {
+      position: relative
+    }
+
+    [data-tip]::after {
+      content: attr(data-tip);
+      position: absolute;
+      bottom: calc(100% + 8px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--s3);
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 9px;
+      padding: 5px 9px;
+      border-radius: 5px;
+      white-space: nowrap;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s;
+      border: 1px solid var(--border2)
+    }
+
+    [data-tip]:hover::after {
+      opacity: 1
+    }
+
+    /* ── Animate scan line ── */
+    @keyframes scanLine {
+      0% {
+        top: 0
+      }
+
+      100% {
+        top: 100%
+      }
+    }
+
+    .scan-overlay {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 1;
+      overflow: hidden;
+      opacity: 0.03
+    }
+
+    .scan-overlay::after {
+      content: '';
+      position: absolute;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--acc2), transparent);
+      animation: scanLine 8s linear infinite
+    }
+  </style>
+</head>
+
+<body>
+  <canvas id="bgCanvas"></canvas>
+
+  <!-- Git branch root lines background -->
+  <div class="git-branch-bg" id="gitBranchBg"></div>
+
+  <div class="grid-bg"></div>
+  <div class="scan-overlay"></div>
+
+  <nav>
+    <a class="logo" href="#">
+      <div class="logo-icon">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <circle cx="8" cy="8" r="2.5" stroke="white" stroke-width="1.5" />
+          <line x1="8" y1="1" x2="8" y2="5" stroke="white" stroke-width="1.5" stroke-linecap="round" />
+          <line x1="8" y1="11" x2="8" y2="15" stroke="white" stroke-width="1.5" stroke-linecap="round" />
+          <line x1="1" y1="8" x2="5" y2="8" stroke="white" stroke-width="1.5" stroke-linecap="round" />
+          <line x1="11" y1="8" x2="15" y2="8" stroke="white" stroke-width="1.5" stroke-linecap="round" />
+          <line x1="3" y1="3" x2="5.5" y2="5.5" stroke="rgba(255,255,255,0.5)" stroke-width="1"
+            stroke-linecap="round" />
+          <line x1="10.5" y1="10.5" x2="13" y2="13" stroke="rgba(255,255,255,0.5)" stroke-width="1"
+            stroke-linecap="round" />
+        </svg>
+      </div>
+      Repo<span class="logo-accent">Matrix</span>.ai
+    </a>
+    <div class="nav-status">
+      <span class="status-dot"></span>
+      <span>AI Online</span>
+    </div>
+    <div class="modes">
+      <button class="mode-btn active" onclick="switchMode('analyze',this)" id="mb-analyze">Analyze</button>
+      <button class="mode-btn" onclick="switchMode('guide',this)" id="mb-guide">Git Guide</button>
+      <button class="mode-btn" onclick="switchMode('issues',this)" id="mb-issues">Issues</button>
+    </div>
+  </nav>
+
+  <!-- ANALYZE MODE -->
+  <div id="analyzeMode" class="mode-section active">
+    <div class="hero">
+      <div class="eyebrow">the why machine</div>
+      <h1>Stop asking <span class="hl">what</span>.<br>Understand <span class="hl2">why</span>.</h1>
+      <p class="subtitle">Paste any GitHub or GitLab commit URL. AI decodes the intent, searches the web for evidence,
+        and shows real execution proof.</p>
+      <div class="stat-bar">
+        <div class="stat"><span class="stat-num" id="s1">0</span><span class="stat-label">commits decoded</span></div>
+        <div class="stat"><span class="stat-num" id="s2">0</span><span class="stat-label">repos explored</span></div>
+        <div class="stat"><span class="stat-num" id="s3">0ms</span><span class="stat-label">avg response</span></div>
+      </div>
+    </div>
+    <div class="input-section">
+      <div class="input-wrap">
+        <div class="input-box">
+          <span class="input-prefix">→</span>
+          <input type="text" id="commitUrl" placeholder="github.com/owner/repo/commit/sha  or full URL"
+            autocomplete="off" spellcheck="false" />
+          <div class="btn-row">
+            <button class="btn btn-primary" onclick="analyzeCommit()" id="btnAnalyze"
+              data-tip="Analyze this commit">ANALYZE WHY</button>
+            <button class="btn btn-secondary" onclick="executeCommit()" id="btnExecute"
+              data-tip="Run code in sandbox">RUN CODE</button>
+          </div>
+        </div>
+        <div class="input-glow"></div>
+      </div>
+      <p class="hint">Try: <a href="#" onclick="fillGithub()">facebook/react/commit/…</a> &nbsp;|&nbsp; <a href="#"
+          onclick="fillGitlab()">gitlab.com/gitlab-org/…</a></p>
+    </div>
+  </div>
+
+  <!-- GUIDE MODE -->
+  <div id="guideMode" class="mode-section">
+    <div class="hero">
+      <div class="eyebrow">learn by doing</div>
+      <h1>Understand <span class="hl">git</span> concepts<br>with <span class="hl2">real code</span>.</h1>
+      <p class="subtitle">Select a git concept and see it applied in real repositories. Learn through examples, not
+        tutorials.</p>
+    </div>
+    <div class="input-section">
+      <div class="box-inner">
+        <input type="text" id="guideRepo" placeholder="Repository URL (e.g., https://github.com/facebook/react)" />
+        <div class="concept-grid" id="conceptGrid">
+          <button class="concept-btn" onclick="selectConcept(this,'branching')">🌿 Branching</button>
+          <button class="concept-btn" onclick="selectConcept(this,'commits')">📦 Commits</button>
+          <button class="concept-btn" onclick="selectConcept(this,'debugging')">🐛 Debugging</button>
+          <button class="concept-btn" onclick="selectConcept(this,'refactoring')">🔧 Refactoring</button>
+          <button class="concept-btn" onclick="selectConcept(this,'merging')">🔀 Merging</button>
+          <button class="concept-btn" onclick="selectConcept(this,'tagging')">🏷️ Tagging</button>
+        </div>
+        <input type="hidden" id="selectedConcept" />
+        <button class="btn btn-primary" onclick="getGitGuide()" id="btnGuide"
+          style="width:100%;margin-top:4px;justify-content:center;">LEARN THIS CONCEPT</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ISSUES MODE -->
+  <div id="issuesMode" class="mode-section">
+    <div class="hero">
+      <div class="eyebrow">find your first issue</div>
+      <h1>Discover <span class="hl">good first issues</span><br>tailored for <span class="hl2">you</span>.</h1>
+      <p class="subtitle">Search issues in repos you care about. Filter by language and find your perfect first
+        contribution.</p>
+    </div>
+    <div class="input-section">
+      <div class="box-inner">
+        <div class="issue-search-row" style="margin-bottom:12px">
+          <input type="text" id="issueQuery" placeholder="What do you want to work on? (e.g., react, css, api)"
+            style="margin-bottom:0;border-bottom-color:var(--border);border:1px solid var(--border);border-radius:var(--r3);padding:10px 12px;" />
+          <select class="lang-select" id="langSelect">
+            <option value="">Any lang</option>
+            <option value="javascript">JavaScript</option>
+            <option value="python">Python</option>
+            <option value="typescript">TypeScript</option>
+            <option value="go">Go</option>
+            <option value="rust">Rust</option>
+            <option value="java">Java</option>
+            <option value="cpp">C++</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" onclick="findIssues()" id="btnIssues"
+          style="width:100%;justify-content:center;">FIND ISSUES</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="results" id="results"></div>
+  <div class="footer">RepoMatrix.ai &nbsp;·&nbsp; Powered by Groq + Llama 3 &nbsp;·&nbsp; GitHub API &nbsp;·&nbsp;
+    Tavily</div>
+
+  <script>
+    // ── Live Git Commit Graph Canvas ──
+    const canvas = document.getElementById('bgCanvas');
+    const ctx = canvas.getContext('2d');
+    let W, H;
+
+
+    // ── Config ──
+    const LANE_W = 22;
+    const ROW_H = 44;
+    const DOT_R = 3.5;
+    const NUM_LANES = 5;
+    const SCROLL_SPEED = 0.7;   // px per frame upward
+    const SPAWN_EVERY = 52;    // frames between new commits
+
+    const COLS = [
+      '124,106,247',
+      '77,232,176',
+      '247,162,106',
+      '167,138,247',
+      '100,200,255',
+    ];
+
+    const MSGS = [
+      'fix: null ptr in parser', 'feat: dark mode toggle',
+      'refactor: auth middleware', 'chore: bump deps',
+      'fix: race condition', 'perf: cache query results',
+      'feat: add retry logic', 'style: lint cleanup',
+      'fix: off-by-one in loop', 'docs: update README',
+      'feat: websocket support', 'fix: memory leak',
+      'refactor: split into hooks', 'chore: CI pipeline',
+      'feat: rate limiting', 'fix: XSS sanitize',
+      'perf: lazy load images', 'feat: pagination',
+    ];
+
+    const randHash = () => Math.floor(Math.random() * 0xfffffff).toString(16).padStart(7, '0');
+
+    let commits = [], frame = 0;
+
+    function spawnCommit() {
+      const lane = Math.floor(Math.random() * NUM_LANES);
+      const isMerge = Math.random() < 0.22 && lane > 0;
+      const isBranch = !isMerge && Math.random() < 0.18 && lane < NUM_LANES - 1;
+      commits.push({
+        lane, y: H + ROW_H,
+        hash: randHash(),
+        msg: MSGS[Math.floor(Math.random() * MSGS.length)],
+        alpha: 0, born: frame,
+        isMerge, mergeFromLane: isMerge ? lane - 1 : null, mergeP: 0,
+        isBranch, branchToLane: isBranch ? lane + 1 : null, branchP: 0,
+      });
+    }
+
+    function resize() {
+      W = canvas.width = innerWidth;
+      H = canvas.height = innerHeight;
+      commits = [];
+      const n = Math.ceil(H / ROW_H) + 4;
+      for (let r = n; r >= 0; r--) {
+        const lane = (r * 3 + Math.floor(r / 4)) % NUM_LANES;
+        const isMerge = (r % 7 === 0) && lane > 0;
+        const isBranch = !isMerge && (r % 11 === 0) && lane < NUM_LANES - 1;
+        commits.push({
+          lane, y: r * ROW_H,
+          hash: randHash(), msg: MSGS[r % MSGS.length],
+          alpha: 0.85, born: frame - (n - r) * SPAWN_EVERY,
+          isMerge, mergeFromLane: isMerge ? lane - 1 : null, mergeP: 1,
+          isBranch, branchToLane: isBranch ? lane + 1 : null, branchP: 1,
+        });
+      }
+    }
+
+    function drawGitGraph() {
+      frame++;
+      ctx.clearRect(0, 0, W, H);
+      const ox = W * 0.035 + 12;  // left offset
+
+      // Lane lines with vertical gradient fade
+      for (let l = 0; l < NUM_LANES; l++) {
+        const x = ox + l * LANE_W;
+        const g = ctx.createLinearGradient(0, 0, 0, H);
+        g.addColorStop(0, `rgba(${COLS[l]},0)`);
+        g.addColorStop(0.12, `rgba(${COLS[l]},0.09)`);
+        g.addColorStop(0.88, `rgba(${COLS[l]},0.09)`);
+        g.addColorStop(1, `rgba(${COLS[l]},0)`);
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H);
+        ctx.strokeStyle = g; ctx.lineWidth = 1; ctx.stroke();
+      }
+
+      // Scroll & cull
+      commits.forEach(c => c.y -= SCROLL_SPEED);
+      commits = commits.filter(c => c.y > -ROW_H * 2);
+      if (frame % SPAWN_EVERY === 0) spawnCommit();
+
+      // Draw commits
+      commits.forEach(c => {
+        const x = ox + c.lane * LANE_W;
+        const age = frame - c.born;
+        const fi = Math.min(age / 30, 1);
+        const fo = c.y < H * 0.12 ? Math.max(c.y / (H * 0.12), 0) : 1;
+        c.alpha = fi * fo * 0.9;
+        if (c.isMerge) c.mergeP = Math.min(c.mergeP + 0.045, 1);
+        if (c.isBranch) c.branchP = Math.min(c.branchP + 0.045, 1);
+
+        const col = COLS[c.lane % COLS.length];
+        const a = c.alpha;
+        if (a <= 0) return;
+
+        // Merge bezier (animated)
+        if (c.isMerge && c.mergeP > 0) {
+          const fx = ox + c.mergeFromLane * LANE_W;
+          ctx.beginPath();
+          const steps = 24;
+          for (let s = 0; s <= steps * c.mergeP; s++) {
+            const t = s / steps;
+            const bx = (1 - t) * (1 - t) * fx + 2 * (1 - t) * t * ((fx + x) / 2) + t * t * x;
+            const by = (1 - t) * (1 - t) * (c.y - ROW_H * .7) + 2 * (1 - t) * t * (c.y - ROW_H * .25) + t * t * c.y;
+            s === 0 ? ctx.moveTo(bx, by) : ctx.lineTo(bx, by);
+          }
+          ctx.strokeStyle = `rgba(${COLS[c.mergeFromLane % COLS.length]},${a * .55})`;
+          ctx.lineWidth = 1.2; ctx.stroke();
+        }
+
+        // Branch-off bezier (animated)
+        if (c.isBranch && c.branchP > 0) {
+          const tx = ox + c.branchToLane * LANE_W;
+          ctx.beginPath();
+          const steps = 24;
+          for (let s = 0; s <= steps * c.branchP; s++) {
+            const t = s / steps;
+            const bx = (1 - t) * (1 - t) * x + 2 * (1 - t) * t * ((x + tx) / 2) + t * t * tx;
+            const by = (1 - t) * (1 - t) * c.y + 2 * (1 - t) * t * (c.y + ROW_H * .3) + t * t * (c.y + ROW_H * .7);
+            s === 0 ? ctx.moveTo(bx, by) : ctx.lineTo(bx, by);
+          }
+          ctx.strokeStyle = `rgba(${COLS[c.branchToLane % COLS.length]},${a * .5})`;
+          ctx.lineWidth = 1.2; ctx.stroke();
+        }
+
+        // Entry glow burst (first 20 frames)
+        if (age < 20) {
+          ctx.beginPath();
+          ctx.arc(x, c.y, DOT_R * 3.5, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(${col},${(1 - age / 20) * 0.35})`;
+          ctx.fill();
+        }
+
+        // Commit dot + ring
+        ctx.beginPath(); ctx.arc(x, c.y, DOT_R, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${col},${a})`; ctx.fill();
+        ctx.beginPath(); ctx.arc(x, c.y, DOT_R + 1.5, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(${col},${a * .3})`; ctx.lineWidth = 0.8; ctx.stroke();
+
+        // Hash label
+        const lx = x + DOT_R + 7;
+        ctx.font = '9px "JetBrains Mono",monospace';
+        ctx.fillStyle = `rgba(${col},${a * .75})`;
+        ctx.fillText(c.hash, lx, c.y + 3);
+
+        // Short message (capped so it doesn't bleed into hero)
+        const maxX = W * 0.42;
+        if (lx + 60 < maxX) {
+          ctx.font = '8px "JetBrains Mono",monospace';
+          ctx.fillStyle = `rgba(255,255,255,${a * .18})`;
+          ctx.fillText(c.msg.slice(0, Math.floor((maxX - lx - 52) / 5.5)), lx + 52, c.y + 3);
+        }
+      });
+
+      requestAnimationFrame(drawGitGraph);
+    }
+
+    resize();
+    window.addEventListener('resize', resize);
+    requestAnimationFrame(drawGitGraph);
+
+    // ── SVG: faint git-branch tree-root lines across full page ──
+    (function buildBranchSVG() {
+      const el = document.getElementById('gitBranchBg');
+      const vw = window.innerWidth, vh = Math.max(window.innerHeight, 2000);
+      // Generate branching paths that look like tree roots / git log --graph
+      // Start from several seeds along the left edge and branch rightward
+      let paths = '';
+      const seeds = [0.08, 0.22, 0.38, 0.55, 0.72, 0.88];
+      const colors = ['rgba(124,106,247,0.06)', 'rgba(77,232,176,0.05)', 'rgba(247,162,106,0.045)', 'rgba(124,106,247,0.04)', 'rgba(77,232,176,0.04)', 'rgba(167,138,247,0.05)'];
+
+      seeds.forEach((sy, si) => {
+        const startY = sy * vh;
+        // Main trunk going diagonally down-right
+        const ex = vw * (0.15 + si * 0.12);
+        const ey = startY + vh * 0.45;
+        const cp1x = ex * 0.3, cp1y = startY + vh * 0.1;
+        const cp2x = ex * 0.7, cp2y = ey - vh * 0.1;
+        paths += `<path d="M 0 ${startY} C ${cp1x} ${cp1y} ${cp2x} ${cp2y} ${ex} ${ey}" stroke="${colors[si]}" stroke-width="1" fill="none"/>`;
+
+        // A branch fork partway along
+        const midX = ex * 0.5;
+        const midY = startY + (ey - startY) * 0.4;
+        const bex = vw * (0.4 + si * 0.09);
+        const bey = midY + vh * 0.2;
+        paths += `<path d="M ${midX} ${midY} C ${midX + 60} ${midY + 30} ${bex - 40} ${bey - 60} ${bex} ${bey}" stroke="${colors[(si + 2) % colors.length]}" stroke-width="1" fill="none"/>`;
+
+        // Commit dots along the trunk
+        for (let t = 0; t <= 1; t += 0.18) {
+          // Bezier point sampling
+          const bx = Math.pow(1 - t, 3) * 0 + 3 * Math.pow(1 - t, 2) * t * cp1x + 3 * (1 - t) * t * t * cp2x + t * t * t * ex;
+          const by = Math.pow(1 - t, 3) * startY + 3 * Math.pow(1 - t, 2) * t * cp1y + 3 * (1 - t) * t * t * cp2y + t * t * t * ey;
+          paths += `<circle cx="${bx}" cy="${by}" r="2" fill="${colors[si]}" opacity="0.7"/>`;
+          // Horizontal commit line tick
+          paths += `<line x1="${bx + 4}" y1="${by}" x2="${bx + 18}" y2="${by}" stroke="${colors[si]}" stroke-width="0.8" opacity="0.5"/>`;
+        }
+      });
+
+      // Additional sparse right-side branches
+      for (let i = 0; i < 4; i++) {
+        const sx = vw * (0.5 + i * 0.14);
+        const sy = vh * (0.05 + i * 0.22);
+        const ex2 = vw * (0.6 + i * 0.1);
+        const ey2 = sy + vh * 0.35;
+        paths += `<path d="M ${sx} ${sy} C ${sx + 40} ${sy + 80} ${ex2 - 40} ${ey2 - 80} ${ex2} ${ey2}" stroke="${colors[i]}" stroke-width="0.8" fill="none"/>`;
+        // dots
+        for (let t = 0.1; t < 1; t += 0.25) {
+          const bx = (1 - t) * (1 - t) * sx + 2 * (1 - t) * t * (sx + 40) + t * t * ex2;
+          const by = (1 - t) * (1 - t) * sy + 2 * (1 - t) * t * (sy + 80) + t * t * ey2;
+          paths += `<circle cx="${bx}" cy="${by}" r="1.5" fill="${colors[i]}" opacity="0.6"/>`;
+        }
+      }
+
+      el.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="${vw}" height="${vh}" viewBox="0 0 ${vw} ${vh}">${paths}</svg>`;
+    })();
+
+    // ── Animated counters ──
+    function animateCount(el, target, suffix, dur) {
+      let start = null;
+      function step(ts) { if (!start) start = ts; const p = Math.min((ts - start) / dur, 1); el.textContent = Math.floor(p * target) + (suffix || ''); if (p < 1) requestAnimationFrame(step) }
+      requestAnimationFrame(step);
+    }
+    setTimeout(() => {
+      animateCount(document.getElementById('s1'), 1247, '', 1400);
+      animateCount(document.getElementById('s2'), 89, '', 1000);
+      animateCount(document.getElementById('s3'), 1240, 'ms', 1200);
+    }, 600);
+
+    // ── Ripple on btn click ──
+    document.querySelectorAll('.btn').forEach(btn => {
+      btn.addEventListener('click', e => {
+        const r = document.createElement('span');
+        const d = Math.max(btn.offsetWidth, btn.offsetHeight);
+        r.style.cssText = `position:absolute;border-radius:50%;width:${d}px;height:${d}px;left:${e.offsetX - d / 2}px;top:${e.offsetY - d / 2}px;background:rgba(255,255,255,0.15);transform:scale(0);animation:ripple 0.5s ease;pointer-events:none`;
+        if (!document.getElementById('rippleKf')) { const s = document.createElement('style'); s.id = 'rippleKf'; s.textContent = '@keyframes ripple{to{transform:scale(2.5);opacity:0}}'; document.head.appendChild(s) }
+        btn.appendChild(r); setTimeout(() => r.remove(), 600);
+      });
+    });
+
+    // ── Mode switch ──
+    let currentMode = 'analyze';
+    function switchMode(mode, el) {
+      currentMode = mode;
+      document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+      el.classList.add('active');
+      document.querySelectorAll('.mode-section').forEach(s => s.classList.remove('active'));
+      document.getElementById(mode + 'Mode').classList.add('active');
+      document.getElementById('results').innerHTML = '';
+    }
+
+    // ── Concept select ──
+    let selectedConcept = '';
+    function selectConcept(btn, concept) {
+      document.querySelectorAll('.concept-btn').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected'); selectedConcept = concept;
+      document.getElementById('selectedConcept').value = concept;
+    }
+
+    // ── Helpers ──
+    function fillGithub() { const i = document.getElementById('commitUrl'); i.value = 'https://github.com/facebook/react/commit/'; i.focus(); i.setSelectionRange(999, 999) }
+    function fillGitlab() { const i = document.getElementById('commitUrl'); i.value = 'https://gitlab.com/gitlab-org/gitlab/-/commit/'; i.focus() }
+    function escapeHtml(s) { if (!s) return ''; return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') }
+
+    // ── Loading UI ──
+    const steps = ['Fetching commit from GitHub…', 'Searching web for related discussions…', 'AI is analyzing the why…', 'Building your explanation…'];
+    function showLoading(msg) {
+      document.getElementById('results').innerHTML = `<div class="loading"><div class="spinner"></div><p style="font-size:12px">${msg || steps[0]}</p><p class="loading-step" id="loadingStep"></p></div>`;
+    }
+
+    // ── Analyze ──
+    async function analyzeCommit(runCode = false) {
+      const url = document.getElementById('commitUrl').value.trim();
+      const results = document.getElementById('results');
+      if (!url) { results.innerHTML = '<div class="error-box">Please enter a GitHub or GitLab commit URL.</div>'; return }
+      let fullUrl = url;
+      if (!url.startsWith('http')) fullUrl = 'https://github.com/' + url;
+      const btnA = document.getElementById('btnAnalyze'), btnE = document.getElementById('btnExecute');
+      btnA.disabled = true; btnA.textContent = 'ANALYZING…'; if (btnE) btnE.disabled = true;
+      showLoading(steps[0]);
+      let si = 0;
+      const iv = setInterval(() => { si = Math.min(si + 1, steps.length - 1); const el = document.getElementById('loadingStep'); if (el) el.textContent = steps[si] }, 2500);
+      try {
+        const r = await fetch('http://localhost:5000/api/commit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: fullUrl, include_execution: runCode }) });
+        const data = await r.json();
+        clearInterval(iv);
+        if (!data.success) { results.innerHTML = `<div class="error-box">Error: ${data.error}</div>`; return }
+        renderCommitResults(data);
+      } catch (err) {
+        clearInterval(iv);
+        results.innerHTML = `<div class="error-box">Could not connect to backend. Make sure Flask is running.<br><br>Run: <code>python app.py</code> in your backend folder.</div>`;
+      } finally { btnA.disabled = false; btnA.textContent = 'ANALYZE WHY'; if (btnE) btnE.disabled = false }
+    }
+    async function executeCommit() { await analyzeCommit(true) }
+
+    // ── Render results ──
+    function renderCommitResults(data) {
+      const c = data.commit, e = data.explanation, w = data.web_evidence || [], patterns = data.similar_patterns || [], exec = data.execution;
+      const filesHtml = c.files_changed.map(f => `
+    <div class="file-header"><span class="file-name">${escapeHtml(f.filename)}</span><div class="file-stats"><span class="additions">+${f.additions}</span><span class="deletions">-${f.deletions}</span><span style="color:var(--text3);font-size:9px;font-family:var(--mono)">${f.status}</span></div></div>
+    ${f.patch && f.patch !== 'Binary file or too large to display' ? `<div class="diff-block">${f.patch.split('\n').slice(0, 25).map(l => {
+        if (l.startsWith('+') && !l.startsWith('+++')) return `<div class="diff-line diff-added">${escapeHtml(l)}</div>`;
+        if (l.startsWith('-') && !l.startsWith('---')) return `<div class="diff-line diff-removed">${escapeHtml(l)}</div>`;
+        return `<div class="diff-line diff-ctx">${escapeHtml(l)}</div>`;
+      }).join('')}</div>` : ''}`).join('');
+      const bugBadge = e.bug_before && e.bug_before.toLowerCase().startsWith('yes') ? '<span class="badge badge-yes">✓ bug existed</span>' : '<span class="badge badge-no">✗ no bug before</span>';
+      const relBadge = e.still_relevant && e.still_relevant.toLowerCase().startsWith('yes') ? '<span class="badge badge-yes">✓ still relevant</span>' : '<span class="badge badge-no">✗ outdated approach</span>';
+      const evHtml = w.length ? w.map(i => {
+        const bc = i.source_type === 'github' ? 'ev-gh' : i.source_type === 'stackoverflow' ? 'ev-so' : i.source_type === 'docs' ? 'ev-docs' : 'ev-web';
+        const bl = i.source_type === 'github' ? 'GitHub' : i.source_type === 'stackoverflow' ? 'Stack Overflow' : i.source_type === 'docs' ? 'Docs' : 'Web';
+        return `<a class="evidence-item" href="${i.url}" target="_blank" rel="noopener"><span class="ev-badge ${bc}">${bl}</span><div class="ev-content"><div class="ev-title">${escapeHtml(i.title)}</div><div class="ev-snippet">${escapeHtml(i.snippet)}</div></div></a>`;
+      }).join('') : '<div class="no-data">No related discussions found for this commit</div>';
+      const patHtml = patterns.length ? patterns.map(p => `<a class="pattern-item" href="${p.url}" target="_blank" rel="noopener"><span class="pattern-badge pattern-gh">Similar</span><div class="pattern-content"><div class="pattern-title">${escapeHtml(p.title)}</div><div class="pattern-snippet">${escapeHtml(p.snippet)}</div><div class="pattern-repo">${p.repo}</div></div></a>`).join('') : '<div class="no-data">No similar patterns found</div>';
+      let execHtml = '';
+      if (exec) {
+        if (exec.available && exec.results) {
+          execHtml = `<div class="execution-grid">${exec.results.map(r => `<div class="exec-item"><div class="exec-header"><span class="exec-dot ${r.skipped ? 'exec-pending' : r.success ? 'exec-success' : 'exec-fail'}"></span><span class="exec-file">${r.file}</span></div><div class="exec-code">${escapeHtml(r.code)}</div><div class="exec-output ${r.skipped ? 'pending' : r.success ? 'ok' : 'error'}">${escapeHtml(r.output)}</div></div>`).join('')}</div>`;
+        } else { execHtml = `<div class="exec-unavailable">${escapeHtml(exec.error || 'Execution not available')}</div>` }
+      }
+      document.getElementById('results').innerHTML = `
+  <div class="card"><div class="card-head"><div class="dot" style="color:#7c6af7;background:#7c6af7"></div><span class="card-title" style="color:#7c6af7">commit details</span><span class="card-tag">${c.source} API</span></div><div class="card-body"><div class="meta-row"><span class="meta-pill">sha: <span>${c.sha}</span></span><span class="meta-pill">author: <span>${escapeHtml(c.author)}</span></span><span class="meta-pill">date: <span>${c.date}</span></span><span class="meta-pill">+${c.total_additions} / -${c.total_deletions}</span></div><div class="commit-message">${escapeHtml(c.message)}</div><div class="file-list">${filesHtml}</div></div></div>
+  <div class="card"><div class="card-head"><div class="dot" style="color:#4de8b0;background:#4de8b0"></div><span class="card-title" style="color:#4de8b0">why it was written</span><span class="card-tag">Groq + Llama 3</span></div><div class="card-body"><div class="why-grid"><div class="why-item"><div class="why-label" style="color:#7c6af7">the problem</div><div class="why-text">${e.problem || 'Analysis unavailable'}</div></div><div class="why-item"><div class="why-label" style="color:#4de8b0">developer thinking</div><div class="why-text">${e.thinking || 'Analysis unavailable'}</div></div><div class="why-item"><div class="why-label" style="color:#f7a26a">bug before this?</div>${bugBadge}<div class="why-text">${e.bug_before || 'Analysis unavailable'}</div></div><div class="why-item"><div class="why-label" style="color:#4de8b0">still relevant today?</div>${relBadge}<div class="why-text">${e.still_relevant || 'Analysis unavailable'}</div></div></div></div></div>
+  <div class="card"><div class="card-head"><div class="dot" style="color:#f7a26a;background:#f7a26a"></div><span class="card-title" style="color:#f7a26a">web evidence</span><span class="card-tag">Tavily API</span></div><div class="card-body"><div class="evidence-list">${evHtml}</div></div></div>
+  <div class="card"><div class="card-head"><div class="dot" style="color:#a78af7;background:#a78af7"></div><span class="card-title" style="color:#a78af7">similar patterns</span><span class="card-tag">Web Search</span></div><div class="card-body"><div class="evidence-list">${patHtml}</div></div></div>
+  ${execHtml ? `<div class="card"><div class="card-head"><div class="dot" style="color:#4de8b0;background:#4de8b0"></div><span class="card-title" style="color:#4de8b0">execution proof</span><span class="card-tag">E2B Sandbox</span></div><div class="card-body">${execHtml}</div></div>` : ''}
+  <div class="card"><div class="card-head"><div class="dot" style="color:#a78af7;background:#a78af7"></div><span class="card-title" style="color:#a78af7">lesson for you</span><span class="card-tag">Groq + Llama 3</span></div><div class="card-body"><div class="lesson-box">${escapeHtml(e.lesson || 'Keep reading open source code — every commit has a story.')}</div></div></div>`;
+    }
+
+    // ── Git Guide ──
+    async function getGitGuide() {
+      const repoUrl = document.getElementById('guideRepo').value.trim();
+      const concept = selectedConcept;
+      const results = document.getElementById('results');
+      const btn = document.getElementById('btnGuide');
+      if (!repoUrl || !concept) { results.innerHTML = '<div class="error-box">Please enter a repository URL and select a concept.</div>'; return }
+      btn.disabled = true; btn.textContent = 'LEARNING…';
+      showLoading('Finding real examples in ' + repoUrl.split('/').pop() + '…');
+      try {
+        const r = await fetch('http://localhost:5000/api/git-guide', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ repo_url: repoUrl, concept }) });
+        const data = await r.json();
+        if (!data.success) { results.innerHTML = `<div class="error-box">Error: ${data.error}</div>`; return }
+        const exHtml = data.real_examples && data.real_examples.length ? data.real_examples.map(ex => `<div class="example-item"><div class="example-sha">${ex.sha}</div><div class="example-msg">${escapeHtml(ex.message)}</div><div class="example-meta">${ex.author} · ${ex.date}</div></div>`).join('') : '<div class="no-data">No examples found in this repository</div>';
+        results.innerHTML = `<div class="card"><div class="card-head"><div class="dot" style="color:#7c6af7;background:#7c6af7"></div><span class="card-title" style="color:#7c6af7">${concept} in ${data.repo}</span><span class="card-tag">Git Guide</span></div><div class="card-body"><div class="guide-concept">Concept: ${concept.toUpperCase()}</div><div class="lesson-box">${escapeHtml(data.explanation)}</div></div></div><div class="card"><div class="card-head"><div class="dot" style="color:#4de8b0;background:#4de8b0"></div><span class="card-title" style="color:#4de8b0">real examples from ${data.repo}</span><span class="card-tag">GitHub API</span></div><div class="card-body"><div class="example-list">${exHtml}</div></div></div>`;
+      } catch { results.innerHTML = '<div class="error-box">Could not connect to backend.</div>' }
+      finally { btn.disabled = false; btn.textContent = 'LEARN THIS CONCEPT' }
+    }
+
+    // ── Issues ──
+    async function findIssues() {
+      const query = document.getElementById('issueQuery').value.trim();
+      const lang = document.getElementById('langSelect').value;
+      const results = document.getElementById('results');
+      const btn = document.getElementById('btnIssues');
+      if (!query) { results.innerHTML = '<div class="error-box">Please enter what you want to work on.</div>'; return }
+      btn.disabled = true; btn.textContent = 'SEARCHING…';
+      showLoading('Scanning GitHub for good first issues…');
+      try {
+        const params = new URLSearchParams({ q: query }); if (lang) params.append('lang', lang);
+        const r = await fetch(`http://localhost:5000/api/issues?${params}`);
+        const data = await r.json();
+        if (!data.success) { results.innerHTML = `<div class="error-box">Error: ${data.error}</div>`; return }
+        const issHtml = data.issues && data.issues.length ? data.issues.map(issue => `<a class="issue-item" href="${issue.url}" target="_blank" rel="noopener"><div><div class="issue-title">${escapeHtml(issue.title)}</div><div class="issue-body">${escapeHtml(issue.body || 'No description provided')}</div><div class="issue-labels">${issue.labels.map(l => `<span class="issue-label">${escapeHtml(l)}</span>`).join('')}</div></div><div style="font-family:var(--mono);font-size:10px;color:var(--text3);margin-top:8px">${issue.repo} · ${issue.created}</div></a>`).join('') : '<div class="no-data">No good first issues found. Try different keywords!</div>';
+        results.innerHTML = `<div class="card"><div class="card-head"><div class="dot" style="color:#4de8b0;background:#4de8b0"></div><span class="card-title" style="color:#4de8b0">${data.count} good first issues found</span><span class="card-tag">GitHub API</span></div><div class="card-body"><div class="issue-list">${issHtml}</div></div></div>`;
+      } catch { results.innerHTML = '<div class="error-box">Could not connect to backend.</div>' }
+      finally { btn.disabled = false; btn.textContent = 'FIND ISSUES' }
+    }
+
+    document.getElementById('commitUrl').addEventListener('keydown', e => { if (e.key === 'Enter') analyzeCommit() });
+  </script>
+</body>
+
+</html>
