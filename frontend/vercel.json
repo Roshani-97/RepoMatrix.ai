@@ -1,0 +1,12 @@
+{
+  "build_command": "",
+  "output_directory": "",
+  "install_command": "",
+  "framework": null,
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "https://repomatrix-backend.onrender.com/api/$1"
+    }
+  ]
+}
