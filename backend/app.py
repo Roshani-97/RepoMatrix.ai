@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from groq import Groq
 from tavily import TavilyClient
 import os
+import re
 import requests
 
 load_dotenv()
@@ -21,6 +22,61 @@ e2b_key = os.getenv("E2B_API_KEY")
 g = Github(github_token)
 groq_client = Groq(api_key=groq_key)
 tavily_client = TavilyClient(api_key=tavily_key)
+
+
+# ── YouTube video links per concept ──
+CONCEPT_VIDEOS = {
+    "branching": {
+        "title": "Git Branches Tutorial",
+        "url": "https://www.youtube.com/watch?v=e2IbNHi4uCI",
+        "channel": "Fireship",
+        "duration": "5 min"
+    },
+    "commits": {
+        "title": "Git Commits Explained",
+        "url": "https://www.youtube.com/watch?v=Uszj_k0DGsg",
+        "channel": "freeCodeCamp",
+        "duration": "8 min"
+    },
+    "merging": {
+        "title": "Git Merge vs Rebase",
+        "url": "https://www.youtube.com/watch?v=CRlGDDprdOQ",
+        "channel": "Fireship",
+        "duration": "5 min"
+    },
+    "debugging": {
+        "title": "Git Bisect — Find Bugs Fast",
+        "url": "https://www.youtube.com/watch?v=D7JJnLFOn4A",
+        "channel": "The Coding Train",
+        "duration": "10 min"
+    },
+    "refactoring": {
+        "title": "Code Refactoring Explained",
+        "url": "https://www.youtube.com/watch?v=vhYK3pDUijk",
+        "channel": "Fireship",
+        "duration": "6 min"
+    },
+    "tagging": {
+        "title": "Git Tags and Releases",
+        "url": "https://www.youtube.com/watch?v=govmXpDGLpo",
+        "channel": "Codevolution",
+        "duration": "7 min"
+    }
+}
+
+
+def clean_markdown(text):
+    if not text:
+        return text
+    text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
+    text = re.sub(r'\*(.*?)\*', r'\1', text)
+    text = re.sub(r'={3,}', '', text)
+    text = re.sub(r'-{4,}', '', text)
+    text = re.sub(r'`{3}[a-z]*\n?(.*?)`{3}', r'\1', text, flags=re.DOTALL)
+    text = re.sub(r'`(.*?)`', r'\1', text)
+    text = re.sub(r'#{1,6}\s+', '', text)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
 
 
 def parse_github_commit(url):
@@ -132,11 +188,7 @@ def search_web_evidence(commit):
     try:
         commit_msg = commit['message'].split('\n')[0][:80]
         repo = commit.get('repo', '')
-
-        filenames = []
-        for f in commit['files_changed'][:2]:
-            name = f['filename'].split('/')[-1]
-            filenames.append(name)
+        filenames = [f['filename'].split('/')[-1] for f in commit['files_changed'][:2]]
 
         queries = [
             f"{repo} {commit_msg}",
@@ -149,24 +201,15 @@ def search_web_evidence(commit):
 
         for query in queries[:2]:
             try:
-                response = tavily_client.search(
-                    query=query,
-                    max_results=3,
-                    search_depth="basic"
-                )
+                response = tavily_client.search(query=query, max_results=3, search_depth="basic")
                 for r in response.get("results", []):
                     url = r.get("url", "")
                     if url not in seen_urls and url:
                         seen_urls.add(url)
-
                         source_type = "web"
-                        if "stackoverflow.com" in url:
-                            source_type = "stackoverflow"
-                        elif "github.com" in url:
-                            source_type = "github"
-                        elif "docs." in url or "documentation" in url.lower():
-                            source_type = "docs"
-
+                        if "stackoverflow.com" in url: source_type = "stackoverflow"
+                        elif "github.com" in url: source_type = "github"
+                        elif "docs." in url or "documentation" in url.lower(): source_type = "docs"
                         all_results.append({
                             "title": r.get("title", "")[:80],
                             "url": url,
@@ -177,8 +220,7 @@ def search_web_evidence(commit):
                 continue
 
         return all_results[:4]
-
-    except Exception as e:
+    except Exception:
         return []
 
 
@@ -186,15 +228,12 @@ def find_similar_patterns(commit):
     try:
         filenames = [f['filename'].split('/')[-1] for f in commit['files_changed'][:2]]
         file_name = filenames[0] if filenames else ""
-        
         search_queries = [
             f"github {file_name} similar implementation pattern",
             f"{file_name} {commit['message'].split()[0] if commit['message'] else ''} fix similar",
         ]
-        
         results = []
         seen_urls = set()
-        
         for query in search_queries[:2]:
             try:
                 response = tavily_client.search(query=query, max_results=3, search_depth="basic")
@@ -210,9 +249,8 @@ def find_similar_patterns(commit):
                         })
             except Exception:
                 continue
-        
         return results[:4]
-    except Exception as e:
+    except Exception:
         return []
 
 
@@ -226,76 +264,50 @@ def extract_repo_from_url(url):
 def extract_code_snippets(commit):
     old_code = []
     new_code = []
-    
     for f in commit["files_changed"][:2]:
         patch = f.get("patch", "")
         if not patch or patch == "Binary file or too large to display":
             continue
-        
         lines = patch.split("\n")
-        in_old = False
-        in_new = False
         old_block = []
         new_block = []
-        
         for line in lines[:50]:
-            if line.startswith("@@"):
-                in_old = "old" in line or "-" in line.split("@@")[0]
-                in_new = "new" in line or "+" in line.split("@@")[-1]
-                old_block = []
-                new_block = []
-            elif line.startswith("-") and not line.startswith("---"):
+            if line.startswith("-") and not line.startswith("---"):
                 old_block.append(line)
-                in_old = True
             elif line.startswith("+") and not line.startswith("+++"):
                 new_block.append(line)
-                in_new = True
-        
         if old_block or new_block:
             old_code.append({"file": f["filename"], "lines": old_block[-10:]})
             new_code.append({"file": f["filename"], "lines": new_block[-10:]})
-    
     return old_code, new_code
 
 
 def execute_code_proof(commit):
     if not e2b_key:
         return {"error": "E2B_API_KEY not configured", "available": False}
-    
     try:
         from e2b_code_interpreter import Sandbox
-        
         old_code, new_code = extract_code_snippets(commit)
-        
         if not new_code:
             return {"error": "No executable code found in commit", "available": False}
-        
         results = []
-        image_patterns = ["matplotlib", "plt.", "plot(", "sns.", " PIL ", "Image.open", "cv2.", "ImageDraw", "graph", "figure"]
-        
+        image_patterns = ["matplotlib", "plt.", "plot(", "sns.", " PIL ", "Image.open", "cv2."]
         with Sandbox.create() as sandbox:
             for code_block in new_code:
                 if code_block["lines"]:
-                    code = "\n".join(code_block["lines"])
-                    code = code.lstrip("+")
-                    
+                    code = "\n".join(code_block["lines"]).lstrip("+")
                     if any(pattern in code for pattern in image_patterns):
                         results.append({
                             "file": code_block["file"],
                             "code": code[:200],
-                            "output": "Skipped: This code generates visual output (matplotlib/images) which cannot be displayed as text.",
+                            "output": "Skipped: This code generates visual output which cannot be displayed as text.",
                             "success": None,
                             "skipped": True
                         })
                         continue
-                    
                     try:
                         execution = sandbox.run_code(code, timeout=10)
                         output = str(execution.text)[:500] if execution.text else "Executed successfully (no output)"
-                        
-                        if hasattr(execution, 'images') and execution.images:
-                            output += "\n[Note: Visual output generated but not displayed]"
-                        
                         results.append({
                             "file": code_block["file"],
                             "code": code[:200],
@@ -303,18 +315,13 @@ def execute_code_proof(commit):
                             "success": True
                         })
                     except Exception as e:
-                        error_msg = str(e)
-                        if "image" in error_msg.lower():
-                            error_msg = "This code generates visual output and cannot be analyzed as text."
                         results.append({
                             "file": code_block["file"],
                             "code": code[:200],
-                            "output": f"Execution error: {error_msg[:100]}",
+                            "output": f"Execution error: {str(e)[:100]}",
                             "success": False
                         })
-        
         return {"available": True, "results": results}
-    
     except ImportError:
         return {"error": "E2B SDK not installed. Run: pip install e2b-code-interpreter", "available": False}
     except Exception as e:
@@ -326,8 +333,7 @@ def explain_with_groq(commit, web_evidence):
     for f in commit["files_changed"][:3]:
         files_summary += f"\nFile: {f['filename']} ({f['status']})\n"
         if f["patch"] and f["patch"] != "Binary file or too large to display":
-            patch_lines = f["patch"].split("\n")[:30]
-            files_summary += "\n".join(patch_lines) + "\n"
+            files_summary += "\n".join(f["patch"].split("\n")[:30]) + "\n"
 
     evidence_context = ""
     if web_evidence:
@@ -336,6 +342,7 @@ def explain_with_groq(commit, web_evidence):
             evidence_context += f"- {e['title']}: {e['snippet']}\n"
 
     prompt = f"""You are an expert code archaeologist. Analyze this Git commit and explain WHY it was written.
+Use plain English only. No markdown, no asterisks, no dashes, no backticks.
 
 COMMIT DETAILS:
 - Message: {commit['message']}
@@ -350,7 +357,7 @@ CODE CHANGES:
 {files_summary}
 {evidence_context}
 
-Provide your response in this EXACT format:
+Respond in this EXACT format:
 
 PROBLEM: (1-2 sentences: what problem was this commit solving?)
 
@@ -370,41 +377,104 @@ LESSON: (1 sentence: what can a beginner developer learn from this commit?)"""
     )
 
     response_text = response.choices[0].message.content
-
-    result = {
-        "problem": "",
-        "thinking": "",
-        "bug_before": "",
-        "still_relevant": "",
-        "lesson": "",
-        "model": "Llama 3.3 70B via Groq"
-    }
-
-    lines = response_text.strip().split("\n")
+    result = {"problem": "", "thinking": "", "bug_before": "", "still_relevant": "", "lesson": "", "model": "Llama 3.3 70B via Groq"}
     current_key = None
 
-    for line in lines:
-        line = line.strip()
-        if line.startswith("PROBLEM:"):
+    for line in response_text.strip().split("\n"):
+        line = clean_markdown(line.strip())
+        if line.upper().startswith("PROBLEM:"):
             current_key = "problem"
-            result["problem"] = line.replace("PROBLEM:", "").strip()
-        elif line.startswith("THINKING:"):
+            result["problem"] = line.split(":", 1)[-1].strip()
+        elif line.upper().startswith("THINKING:"):
             current_key = "thinking"
-            result["thinking"] = line.replace("THINKING:", "").strip()
-        elif line.startswith("BUG_BEFORE:"):
+            result["thinking"] = line.split(":", 1)[-1].strip()
+        elif line.upper().startswith("BUG_BEFORE:"):
             current_key = "bug_before"
-            result["bug_before"] = line.replace("BUG_BEFORE:", "").strip()
-        elif line.startswith("STILL_RELEVANT:"):
+            result["bug_before"] = line.split(":", 1)[-1].strip()
+        elif line.upper().startswith("STILL_RELEVANT:"):
             current_key = "still_relevant"
-            result["still_relevant"] = line.replace("STILL_RELEVANT:", "").strip()
-        elif line.startswith("LESSON:"):
+            result["still_relevant"] = line.split(":", 1)[-1].strip()
+        elif line.upper().startswith("LESSON:"):
             current_key = "lesson"
-            result["lesson"] = line.replace("LESSON:", "").strip()
+            result["lesson"] = line.split(":", 1)[-1].strip()
         elif line and current_key:
             result[current_key] += " " + line
 
     return result
 
+
+def get_git_guide_explanation(repo_url, concept, real_examples):
+    examples_text = ""
+    if real_examples:
+        examples_text = "\n\nReal examples from this repo:\n"
+        for ex in real_examples[:3]:
+            examples_text += f"- {ex['sha']}: {ex['message']} by {ex['author']}\n"
+
+    prompt = f"""You are a friendly Git teacher explaining to a complete beginner who has never used Git before.
+Explain the concept of {concept} in Git.
+Repository context: {repo_url}
+{examples_text}
+
+Write in plain conversational English. No markdown. No asterisks. No bold. No backticks. No dashes as separators.
+Short sentences. Simple words. Like talking to a friend.
+
+Your response must have exactly these 4 labeled sections:
+
+WHAT IT IS:
+Write 2 to 3 sentences explaining what {concept} is. Use a simple everyday analogy.
+
+WHY IT MATTERS:
+Write 2 sentences explaining the real problem that {concept} solves for developers.
+
+HOW TO USE IT:
+Write 3 to 4 sentences with actual steps to use {concept}. Write commands in plain text without backticks.
+
+PRO TIP:
+Write exactly 1 sentence with the most important thing a beginner must know about {concept}."""
+
+    response = groq_client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=700,
+        temperature=0.4
+    )
+
+    raw = clean_markdown(response.choices[0].message.content)
+    sections = {"what_it_is": "", "why_it_matters": "", "how_to_use_it": "", "pro_tip": ""}
+    current = None
+
+    for line in raw.split("\n"):
+        line = line.strip()
+        upper = line.upper()
+        if "WHAT IT IS" in upper:
+            current = "what_it_is"
+            val = line.split(":", 1)[-1].strip() if ":" in line else ""
+            if val: sections["what_it_is"] = val
+        elif "WHY IT MATTERS" in upper:
+            current = "why_it_matters"
+            val = line.split(":", 1)[-1].strip() if ":" in line else ""
+            if val: sections["why_it_matters"] = val
+        elif "HOW TO USE IT" in upper:
+            current = "how_to_use_it"
+            val = line.split(":", 1)[-1].strip() if ":" in line else ""
+            if val: sections["how_to_use_it"] = val
+        elif "PRO TIP" in upper:
+            current = "pro_tip"
+            val = line.split(":", 1)[-1].strip() if ":" in line else ""
+            if val: sections["pro_tip"] = val
+        elif line and current:
+            sections[current] += " " + line
+
+    for k in sections:
+        sections[k] = sections[k].strip()
+
+    if not any(sections.values()):
+        sections["what_it_is"] = raw[:400]
+
+    return sections
+
+
+# ── API Routes ──
 
 @app.route("/api/commit", methods=["POST"])
 def get_commit():
@@ -426,23 +496,19 @@ def get_commit():
         web_evidence = search_web_evidence(commit)
         explanation = explain_with_groq(commit, web_evidence)
         similar_patterns = find_similar_patterns(commit)
-        
-        execution_result = None
-        if include_execution:
-            execution_result = execute_code_proof(commit)
 
-        response = {
+        response_data = {
             "success": True,
             "commit": commit,
             "explanation": explanation,
             "web_evidence": web_evidence,
             "similar_patterns": similar_patterns
         }
-        
-        if execution_result:
-            response["execution"] = execution_result
 
-        return jsonify(response)
+        if include_execution:
+            response_data["execution"] = execute_code_proof(commit)
+
+        return jsonify(response_data)
 
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
@@ -452,10 +518,8 @@ def get_commit():
 def execute_code():
     data = request.json
     url = data.get("url", "").strip()
-    
     if not url:
         return jsonify({"success": False, "error": "Please provide a commit URL"})
-    
     try:
         if "github.com" in url:
             commit = parse_github_commit(url)
@@ -463,10 +527,8 @@ def execute_code():
             commit = parse_gitlab_commit(url)
         else:
             return jsonify({"success": False, "error": "URL not recognized"})
-        
         result = execute_code_proof(commit)
         return jsonify({"success": True, "execution": result})
-    
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
 
@@ -477,63 +539,54 @@ def git_guide():
     repo_url = data.get("repo_url", "").strip()
     concept = data.get("concept", "").strip()
 
-    if not repo_url:
-        return jsonify({"success": False, "error": "Please provide a repository URL"})
+    if not repo_url or not concept:
+        return jsonify({"success": False, "error": "Please provide a repository URL and concept."})
+    if "github.com" not in repo_url:
+        return jsonify({"success": False, "error": "Git Guide currently supports GitHub only."})
 
     try:
-        if "github.com" not in repo_url:
-            return jsonify({"success": False, "error": "Git Guide currently supports GitHub only"})
-
         clean = repo_url.replace("https://github.com/", "").replace("http://github.com/", "")
         parts = clean.strip("/").split("/")
         owner = parts[0]
         repo_name = parts[1]
-
         repo = g.get_repo(f"{owner}/{repo_name}")
 
-        concept_map = {
-            "branching": ["feature", "branch", "main", "develop"],
-            "commits": ["commit", "fix", "update", "add"],
-            "pull_request": ["merge", "pull", "review"],
-            "debugging": ["bug", "fix", "hotfix", "patch"],
-            "refactoring": ["refactor", "cleanup", "improve", "optimize"]
+        keywords = {
+            "branching": ["branch", "merge", "checkout"],
+            "commits": ["fix", "feat", "refactor", "add", "update"],
+            "debugging": ["fix", "bug", "error", "issue", "resolve"],
+            "refactoring": ["refactor", "cleanup", "restructure", "reorganize", "improve"],
+            "merging": ["merge", "rebase", "integrate"],
+            "tagging": ["tag", "release", "version"]
         }
 
-        search_terms = concept_map.get(concept.lower(), ["commit", "fix", "feature"])
-        
-        commits = list(repo.get_commits()[:20])
-        
-        relevant_commits = []
-        for commit in commits:
-            message_lower = commit.commit.message.lower()
-            if any(term in message_lower for term in search_terms):
-                relevant_commits.append({
+        search_terms = keywords.get(concept, [concept])
+        real_examples = []
+        count = 0
+
+        for commit in repo.get_commits():
+            if count > 50: break
+            msg = commit.commit.message.lower()
+            if any(term in msg for term in search_terms):
+                real_examples.append({
                     "sha": commit.sha[:10],
-                    "message": commit.commit.message.split('\n')[0],
+                    "message": commit.commit.message.split("\n")[0][:80],
                     "author": commit.commit.author.name,
                     "date": commit.commit.author.date.strftime("%B %d, %Y")
                 })
-                if len(relevant_commits) >= 5:
-                    break
+            count += 1
+            if len(real_examples) >= 5: break
 
-        explanation_prompt = f"""Explain the git concept '{concept}' using real examples from the {owner}/{repo_name} repository.
-Focus on how this concept is applied in real-world development. Give beginner-friendly examples."""
-
-        response = groq_client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "user", "content": explanation_prompt}],
-            max_tokens=600,
-            temperature=0.4
-        )
-
-        guide_explanation = response.choices[0].message.content
+        explanation_sections = get_git_guide_explanation(repo_url, concept, real_examples)
+        video = CONCEPT_VIDEOS.get(concept, None)
 
         return jsonify({
             "success": True,
-            "repo": f"{owner}/{repo_name}",
             "concept": concept,
-            "explanation": guide_explanation,
-            "real_examples": relevant_commits
+            "repo": f"{owner}/{repo_name}",
+            "explanation_sections": explanation_sections,
+            "real_examples": real_examples,
+            "video": video
         })
 
     except Exception as e:
@@ -556,7 +609,6 @@ def find_issues():
         search_query += f" label:\"{label}\" is:issue is:open"
 
         search_results = g.search_issues(search_query, per_page=10)
-
         issues = []
         for issue in search_results[:10]:
             repo_name = issue.repository.full_name if hasattr(issue, 'repository') else "unknown"
@@ -569,12 +621,7 @@ def find_issues():
                 "created": issue.created_at.strftime("%B %d, %Y") if hasattr(issue, 'created_at') else ""
             })
 
-        return jsonify({
-            "success": True,
-            "query": query,
-            "count": len(issues),
-            "issues": issues
-        })
+        return jsonify({"success": True, "query": query, "count": len(issues), "issues": issues})
 
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
@@ -587,7 +634,7 @@ def health():
         "supports": ["GitHub", "GitLab"],
         "ai": "Groq + Llama 3.3",
         "search": "Tavily",
-        "sandbox": "E2B" if e2b_key else "Not configured",
+        "sandbox": "E2B configured" if e2b_key else "E2B not configured — add E2B_API_KEY to .env",
         "modes": ["commit-analyzer", "git-guide", "issue-finder"]
     })
 
